@@ -413,13 +413,6 @@ This project is licensed under the terms specified in the LICENSE file.
 - [MindsDB GitHub Repository](https://github.com/mindsdb/mindsdb)
 - [Cobra CLI Framework](https://cobra.dev/)
 
-## 📞 Support
-
-For questions and support:
-- Check the [MindsDB Documentation](https://docs.mindsdb.com/)
-- Open an issue in this repository
-- Join the [MindsDB Community](https://mindsdb.com/community)
-
 ## 🗺️ Roadmap
 
 ### Current Version (v0.2.0) ✅
@@ -438,7 +431,6 @@ For questions and support:
 - 📋 Configuration file support
 - 📋 Interactive mode with auto-completion
 - 📋 Export/import functionality for models
-- 📋 Integration with MindsDB Cloud features
 - 📋 Comprehensive test suite
 
 ### Future Versions
@@ -446,7 +438,6 @@ For questions and support:
 - 📋 Plugin system for custom extensions
 - 📋 Advanced monitoring and logging
 - 📋 Multi-container orchestration
-- 📋 Performance optimization and caching
 
 ---
 
