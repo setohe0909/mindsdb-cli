@@ -415,7 +415,7 @@ This project is licensed under the terms specified in the LICENSE file.
 
 ## 🗺️ Roadmap
 
-### Current Version (v0.2.0) ✅
+### Current Version (v0.1.0) ✅
 - ✅ Basic CLI structure with Cobra
 - ✅ PostgreSQL connection to external MindsDB instances
 - ✅ MySQL connection to embedded MindsDB instances
