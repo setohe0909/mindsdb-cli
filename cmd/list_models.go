@@ -1,16 +1,16 @@
 package cmd
 
 import (
-    "fmt"
+	"fmt"
 
-    "github.com/spf13/cobra"
+	"github.com/spf13/cobra"
 )
 
 var listModelsCmd = &cobra.Command{
-    Use:   "list-models",
-    Short: "List all available models",
-    Run: func(cmd *cobra.Command, args []string) {
-        fmt.Println("Listing all models...")
-        // Lógica para listar modelos
-    },
+	Use:   "list-models",
+	Short: "List all available models",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println("Listing all models...")
+		// Lógica para listar modelos
+	},
 }
