@@ -6,7 +6,8 @@ A command-line interface for MindsDB written in Go. This tool allows you to inte
 
 - **Easy Connection**: Connect to MindsDB instances using PostgreSQL or MySQL protocols
 - **Model Management**: Create and list machine learning models
-- **Query Execution**: Run SQL queries and predictions
+- **Interactive SQL Mode**: REPL-like interface with persistent connections, multi-line queries, and special commands
+- **Smart Query Execution**: Run SQL queries with adaptive table formatting, multiple output formats (table/JSON/CSV), and intelligent text wrapping
 - **Beautiful CLI**: Clean interface with helpful banners and status messages
 - **Cross-platform**: Works on macOS, Linux, and Windows
 - **✅ Embedded MindsDB**: No separate installation required! Run MindsDB directly from the CLI using Docker
@@ -62,7 +63,10 @@ Use MindsDB without any separate installation - everything runs in Docker:
 # Start embedded MindsDB (automatically downloads and starts MindsDB)
 mindsdb-cli start --user admin --pass admin
 
-# Connect to embedded instance
+# Connect and start interactive SQL mode
+mindsdb-cli query
+
+# Or connect once to test
 mindsdb-cli connect --embedded --user admin --pass admin
 
 # Check status
@@ -200,10 +204,15 @@ mindsdb-cli create-model --name house_price_predictor --from real_estate_data --
 
 #### 7. Execute Queries
 
-Run SQL queries and predictions:
+Run SQL queries and predictions with multiple output formats:
 
 ```bash
+# Interactive mode (like Python or Node.js REPL)
+mindsdb-cli query                # Starts interactive SQL prompt
+
+# Basic queries
 mindsdb-cli query --sql "SELECT * FROM mindsdb.models"
+mindsdb-cli query "SHOW DATABASES"
 
 # Make predictions
 mindsdb-cli query --sql "SELECT price FROM house_price_predictor WHERE bedrooms=3 AND bathrooms=2"
@@ -213,12 +222,88 @@ mindsdb-cli query --embedded "SELECT name FROM models"
 
 # Use with external instance
 mindsdb-cli query --host localhost:47335 --user admin --pass admin "SHOW TABLES"
+
+# Different output formats for large datasets
+mindsdb-cli query --format json "SELECT * FROM training_data"
+mindsdb-cli query --format csv "SELECT * FROM models"
+
+# Control table width for better readability
+mindsdb-cli query --max-width 30 "SELECT * FROM large_content_table"
+mindsdb-cli query --compact "SELECT * FROM very_large_table"
+```
+
+**Interactive Mode Features:**
+- **REPL-like interface**: Just like Python or Node.js interactive mode
+- **Multi-line queries**: Use semicolon (`;`) to execute, or press Enter on empty line
+- **Persistent connection**: Connection stays active throughout your session
+- **Special commands**: `.help`, `.exit`, `.format <table|json|csv>`, `.compact`, `.clear`
+- **Smart prompts**: `mindsdb>` for new queries, `...` for continued lines
+
+**Interactive Example:**
+```bash
+$ mindsdb-cli query
+🧠 MindsDB Interactive SQL Mode
+================================
+
+💡 Type SQL queries and press Enter to execute
+💡 Use semicolon (;) for multi-line queries  
+💡 Commands: .help, .exit, .format <table|json|csv>, .compact
+
+🔗 Connecting to embedded MindsDB (default)...
+✅ Connected! Ready for queries.
+
+mindsdb> SHOW DATABASES;
+[results displayed]
+
+mindsdb> SELECT name, status 
+  ... FROM models 
+  ... WHERE accuracy > 0.8;
+[results displayed]
+
+mindsdb> .format json
+✅ Output format changed to: json
+
+mindsdb> SELECT * FROM models;
+[JSON results displayed]
+
+mindsdb> .exit
+👋 Goodbye!
 ```
 
 **Flags:**
 - `--sql`: SQL query to execute
 - `--embedded`: Use embedded MindsDB instance
 - `--host`, `--user`, `--pass`: External MindsDB connection details
+- `--format`: Output format - `table` (default), `json`, or `csv`
+- `--max-width`: Maximum column width for table display (default: 30)
+- `--compact`: Use compact mode for very readable tables with narrow columns
+
+### 📊 Smart Table Formatting
+
+The CLI automatically adapts table display based on your terminal size and content length:
+
+**Adaptive Features:**
+- **Terminal Width Detection**: Tables automatically fit your terminal width
+- **Column Width Limits**: Long content is intelligently truncated with ellipsis
+- **Smart Text Wrapping**: Content wraps at word boundaries when possible
+- **Multiple Output Formats**: Switch to JSON or CSV for large datasets
+- **Customizable Width**: Control maximum column width with `--max-width`
+- **Compact Mode**: Ultra-readable tables with `--compact` for dense data
+
+**Examples:**
+```bash
+# Compact display for large content
+mindsdb-cli query --max-width 25 "SELECT * FROM training_data"
+
+# Ultra-compact mode for very dense data
+mindsdb-cli query --compact "SELECT * FROM conversation_logs"
+
+# JSON format for programmatic use
+mindsdb-cli query --format json "SELECT * FROM models" | jq .
+
+# CSV format for data analysis
+mindsdb-cli query --format csv "SELECT name, accuracy FROM models" > models.csv
+```
 
 ### Help and Documentation
 
@@ -420,6 +505,8 @@ This project is licensed under the terms specified in the LICENSE file.
 - ✅ PostgreSQL connection to external MindsDB instances
 - ✅ MySQL connection to embedded MindsDB instances
 - ✅ Core commands: connect, list-models, create-model, query
+- ✅ Interactive SQL mode with REPL-like interface
+- ✅ Smart table formatting with multiple output formats
 - ✅ Docker integration for embedded MindsDB
 - ✅ Container lifecycle management (start/stop/status)
 - ✅ Automatic MindsDB image download
