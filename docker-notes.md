@@ -1,0 +1,1 @@
+docker logs mindsdb-cli-embedded --tail 50
