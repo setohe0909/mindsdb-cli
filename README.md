@@ -230,14 +230,19 @@ mindsdb-cli query --format csv "SELECT * FROM models"
 # Control table width for better readability
 mindsdb-cli query --max-width 30 "SELECT * FROM large_content_table"
 mindsdb-cli query --compact "SELECT * FROM very_large_table"
+
+# Handle wide tables with many columns
+mindsdb-cli query --vertical "SELECT * FROM models"           # Force vertical layout
+mindsdb-cli query --limit 5 "SELECT * FROM big_dataset"       # Limit rows displayed
 ```
 
 **Interactive Mode Features:**
 - **REPL-like interface**: Just like Python or Node.js interactive mode
 - **Multi-line queries**: Use semicolon (`;`) to execute, or press Enter on empty line
 - **Persistent connection**: Connection stays active throughout your session
-- **Special commands**: `.help`, `.exit`, `.format <table|json|csv>`, `.compact`, `.clear`
+- **Special commands**: `.help`, `.exit`, `.format <table|json|csv>`, `.compact`, `.vertical`, `.limit <num>`, `.clear`
 - **Smart prompts**: `mindsdb>` for new queries, `...` for continued lines
+- **Auto-detection**: Wide tables automatically switch to vertical layout
 
 **Interactive Example:**
 ```bash
@@ -247,7 +252,7 @@ $ mindsdb-cli query
 
 💡 Type SQL queries and press Enter to execute
 💡 Use semicolon (;) for multi-line queries  
-💡 Commands: .help, .exit, .format <table|json|csv>, .compact
+💡 Commands: .help, .exit, .format, .compact, .vertical, .limit
 
 🔗 Connecting to embedded MindsDB (default)...
 ✅ Connected! Ready for queries.
@@ -255,10 +260,21 @@ $ mindsdb-cli query
 mindsdb> SHOW DATABASES;
 [results displayed]
 
+mindsdb> SELECT * FROM models;
+💡 Wide table detected (19 columns) - using vertical layout for better readability
+[vertical layout results displayed]
+
+mindsdb> .limit 3
+✅ Row limit set to: 3
+
 mindsdb> SELECT name, status 
   ... FROM models 
   ... WHERE accuracy > 0.8;
+💡 Showing first 3 rows (use --limit 0 to show all)
 [results displayed]
+
+mindsdb> .vertical
+✅ Vertical layout enabled
 
 mindsdb> .format json
 ✅ Output format changed to: json
@@ -277,18 +293,23 @@ mindsdb> .exit
 - `--format`: Output format - `table` (default), `json`, or `csv`
 - `--max-width`: Maximum column width for table display (default: 30)
 - `--compact`: Use compact mode for very readable tables with narrow columns
+- `--vertical`: Force vertical layout for wide tables (great for many columns)
+- `--limit`: Limit the number of rows displayed (0 for no limit)
 
 ### 📊 Smart Table Formatting
 
-The CLI automatically adapts table display based on your terminal size and content length:
+The CLI automatically adapts table display based on your terminal size and content structure:
 
 **Adaptive Features:**
 - **Terminal Width Detection**: Tables automatically fit your terminal width
+- **Wide Table Auto-Detection**: Tables with 8+ columns automatically use vertical layout
+- **Vertical Layout**: Each row displayed as key-value pairs for maximum readability
 - **Column Width Limits**: Long content is intelligently truncated with ellipsis
 - **Smart Text Wrapping**: Content wraps at word boundaries when possible
 - **Multiple Output Formats**: Switch to JSON or CSV for large datasets
 - **Customizable Width**: Control maximum column width with `--max-width`
 - **Compact Mode**: Ultra-readable tables with `--compact` for dense data
+- **Row Limiting**: Control how many rows to display with `--limit`
 
 **Examples:**
 ```bash
@@ -298,11 +319,41 @@ mindsdb-cli query --max-width 25 "SELECT * FROM training_data"
 # Ultra-compact mode for very dense data
 mindsdb-cli query --compact "SELECT * FROM conversation_logs"
 
+# Force vertical layout for wide tables (perfect for model info)
+mindsdb-cli query --vertical "SELECT * FROM models"
+
+# Limit rows for quick previews
+mindsdb-cli query --limit 3 "SELECT * FROM large_dataset"
+
 # JSON format for programmatic use
 mindsdb-cli query --format json "SELECT * FROM models" | jq .
 
 # CSV format for data analysis
 mindsdb-cli query --format csv "SELECT name, accuracy FROM models" > models.csv
+```
+
+**Wide Table Example (Vertical Layout):**
+```bash
+$ mindsdb-cli query "SELECT * FROM models"
+
+📊 Results:
+💡 Wide table detected (19 columns) - using vertical layout for better readability
+
+📋 Row 1:
+────────────────────────────────────────────────────────────
+  NAME                      : my_model
+  ENGINE                    : lightgbm  
+  PROJECT                   : mindsdb
+  ACTIVE                    : true
+  VERSION                   : 1
+  STATUS                    : complete
+  ACCURACY                  : 0.95
+  PREDICT                   : target_column
+  UPDATE_STATUS             : up_to_date
+  MINDSDB_VERSION          : 23.10.3.0
+  ERROR                     : NULL
+  ...
+✅ Query completed successfully (1 row)
 ```
 
 ### Help and Documentation
