@@ -198,12 +198,18 @@ func (c *MindsDBClient) startContainer(containerID string) error {
 func (c *MindsDBClient) waitForMindsDB(user, pass string) error {
 	fmt.Print("⏳ Waiting for MindsDB to be ready")
 
-	mysqlDSN := fmt.Sprintf("%s:%s@tcp(localhost:%s)/mindsdb", user, pass, MySQLPort)
+	// Build a list of DSNs to try each attempt. Always try MindsDB defaults first,
+	// then try provided credentials if they were supplied.
+	defaultDSN := fmt.Sprintf("mindsdb:@tcp(localhost:%s)/mindsdb?timeout=2s&readTimeout=2s&writeTimeout=2s&parseTime=true", MySQLPort)
+	var providedDSN string
+	if user != "" { // only construct provided DSN if a username was supplied
+		providedDSN = fmt.Sprintf("%s:%s@tcp(localhost:%s)/mindsdb?timeout=2s&readTimeout=2s&writeTimeout=2s&parseTime=true", user, pass, MySQLPort)
+	}
 
 	maxAttempts := 30
 	for i := 1; i <= maxAttempts; i++ {
-		db, err := sql.Open("mysql", mysqlDSN)
-		if err == nil {
+		// Attempt with default credentials first
+		if db, err := sql.Open("mysql", defaultDSN); err == nil {
 			if err := db.Ping(); err == nil {
 				db.Close()
 				fmt.Println(" ✅")
@@ -211,6 +217,19 @@ func (c *MindsDBClient) waitForMindsDB(user, pass string) error {
 				return nil
 			}
 			db.Close()
+		}
+
+		// Then attempt with provided credentials (if any)
+		if providedDSN != "" {
+			if db, err := sql.Open("mysql", providedDSN); err == nil {
+				if err := db.Ping(); err == nil {
+					db.Close()
+					fmt.Println(" ✅")
+					fmt.Printf("🎉 MindsDB is ready! Web UI: http://localhost:%s\n", MindsDBPort)
+					return nil
+				}
+				db.Close()
+			}
 		}
 
 		fmt.Print(".")
