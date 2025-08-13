@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,7 +42,7 @@ func NewClient(host, user, pass string) (*MindsDBClient, error) {
 func NewEmbeddedClient(user, pass string) (*MindsDBClient, error) {
 	// Check if Docker is available
 	if !IsDockerAvailable() {
-		return nil, fmt.Errorf("Docker is not available - required for embedded mode")
+		return nil, fmt.Errorf("docker is not available - required for embedded mode")
 	}
 
 	client := &MindsDBClient{EmbeddedMode: true, IsMySQL: true}
@@ -55,7 +56,7 @@ func NewEmbeddedClient(user, pass string) (*MindsDBClient, error) {
 
 	// Try connecting without credentials first (MindsDB default behavior)
 	fmt.Println("🔐 Trying connection with MindsDB defaults (user: mindsdb, no password)...")
-	mysqlDSN := fmt.Sprintf("mindsdb:@tcp(localhost:%s)/mindsdb", MySQLPort)
+	mysqlDSN := fmt.Sprintf("mindsdb:@tcp(localhost:%s)/mindsdb?timeout=10s&readTimeout=10s&writeTimeout=10s&parseTime=true", MySQLPort)
 
 	mysqlConn, err := sql.Open("mysql", mysqlDSN)
 	if err == nil {
@@ -66,12 +67,13 @@ func NewEmbeddedClient(user, pass string) (*MindsDBClient, error) {
 		}
 		mysqlConn.Close()
 	}
-	fmt.Println("❌ Failed with MindsDB defaults, trying with provided credentials...")
+	fmt.Printf("❌ Failed with MindsDB defaults: %v\n", err)
+	fmt.Println("🔄 Trying with provided credentials...")
 
 	// If no-auth fails, try with provided credentials
 	if user != "" && pass != "" {
 		fmt.Printf("🔐 Trying provided credentials (%s)...\n", user)
-		mysqlDSN = fmt.Sprintf("%s:%s@tcp(localhost:%s)/mindsdb", user, pass, MySQLPort)
+		mysqlDSN = fmt.Sprintf("%s:%s@tcp(localhost:%s)/mindsdb?timeout=10s&readTimeout=10s&writeTimeout=10s&parseTime=true", user, pass, MySQLPort)
 
 		mysqlConn, err = sql.Open("mysql", mysqlDSN)
 		if err == nil {
@@ -82,7 +84,7 @@ func NewEmbeddedClient(user, pass string) (*MindsDBClient, error) {
 			}
 			mysqlConn.Close()
 		}
-		fmt.Printf("❌ Failed with provided credentials\n")
+		fmt.Printf("❌ Failed with provided credentials: %v\n", err)
 	}
 
 	return nil, fmt.Errorf("failed to connect to MindsDB. Default credentials are user 'mindsdb' with empty password. Last error: %w", err)
@@ -114,8 +116,49 @@ func IsDockerAvailable() bool {
 	return err == nil
 }
 
+// checkSystemResources provides warnings about system resource constraints
+func (c *MindsDBClient) checkSystemResources() {
+	fmt.Println("🔍 Checking system resources...")
+
+	// Check available memory
+	if cmd := exec.Command("sh", "-c", "free -m 2>/dev/null | awk 'NR==2{printf \"%.0f\", $7}'"); cmd != nil {
+		if output, err := cmd.Output(); err == nil {
+			if availableMemMB := strings.TrimSpace(string(output)); availableMemMB != "" {
+				if mem, err := strconv.Atoi(availableMemMB); err == nil {
+					if mem < 2048 {
+						fmt.Printf("⚠️  Available memory: %dMB (MindsDB recommends 2GB+)\n", mem)
+						fmt.Println("   Consider using a larger EC2 instance if MindsDB fails to start")
+					} else {
+						fmt.Printf("✅ Available memory: %dMB\n", mem)
+					}
+				}
+			}
+		}
+	}
+
+	// Check Docker memory limit
+	if cmd := exec.Command("docker", "system", "info", "--format", "{{.MemTotal}}"); cmd != nil {
+		if output, err := cmd.Output(); err == nil {
+			if dockerMemStr := strings.TrimSpace(string(output)); dockerMemStr != "" {
+				if dockerMem, err := strconv.ParseInt(dockerMemStr, 10, 64); err == nil {
+					dockerMemGB := dockerMem / (1024 * 1024 * 1024)
+					if dockerMemGB < 2 {
+						fmt.Printf("⚠️  Docker memory limit: %dGB (MindsDB needs 2GB+)\n", dockerMemGB)
+						fmt.Println("   You may need to increase Docker's memory allocation")
+					} else {
+						fmt.Printf("✅ Docker memory limit: %dGB\n", dockerMemGB)
+					}
+				}
+			}
+		}
+	}
+}
+
 // StartEmbeddedMindsDB starts a MindsDB container using Docker CLI
 func (c *MindsDBClient) StartEmbeddedMindsDB(user, pass string) (string, error) {
+	// Check system resources first (helpful for EC2 instances)
+	c.checkSystemResources()
+
 	// Check if container already exists and is running
 	if containerID := c.findExistingContainer(); containerID != "" {
 		if c.isContainerRunning(containerID) {
@@ -140,14 +183,29 @@ func (c *MindsDBClient) StartEmbeddedMindsDB(user, pass string) (string, error) 
 		return "", fmt.Errorf("failed to pull MindsDB image: %w", err)
 	}
 
-	// Create and start container
+	// Create and start container with EC2-optimized settings
 	fmt.Println("🚀 Creating MindsDB container...")
 	cmd = exec.Command("docker", "run", "-d",
 		"--name", ContainerName,
 		"-p", MindsDBPort+":"+MindsDBPort,
 		"-p", MySQLPort+":"+MySQLPort,
+		// Resource limits for EC2 compatibility
+		"--memory=2g",
+		"--memory-swap=4g",
+		"--cpus=1.5",
+		"--oom-kill-disable=false",
+		// Health check
+		"--health-cmd=mysqladmin ping -h localhost -P "+MySQLPort+" -u mindsdb --silent",
+		"--health-interval=30s",
+		"--health-timeout=10s",
+		"--health-retries=3",
+		"--health-start-period=60s",
+		// Environment variables
 		"-e", "MINDSDB_DB_SERVICE_HOST=0.0.0.0",
 		"-e", "MINDSDB_DB_SERVICE_PORT="+MySQLPort,
+		// Performance tuning for cloud environments
+		"-e", "MINDSDB_STORAGE_ENGINE=sqlite",
+		"-e", "PYTHONUNBUFFERED=1",
 		MindsDBImage)
 
 	output, err := cmd.Output()
@@ -200,13 +258,21 @@ func (c *MindsDBClient) waitForMindsDB(user, pass string) error {
 
 	// Build a list of DSNs to try each attempt. Always try MindsDB defaults first,
 	// then try provided credentials if they were supplied.
-	defaultDSN := fmt.Sprintf("mindsdb:@tcp(localhost:%s)/mindsdb?timeout=2s&readTimeout=2s&writeTimeout=2s&parseTime=true", MySQLPort)
+	// Use more generous timeouts to avoid "unexpected EOF" errors during startup
+	defaultDSN := fmt.Sprintf("mindsdb:@tcp(localhost:%s)/mindsdb?timeout=10s&readTimeout=10s&writeTimeout=10s&parseTime=true", MySQLPort)
 	var providedDSN string
 	if user != "" { // only construct provided DSN if a username was supplied
-		providedDSN = fmt.Sprintf("%s:%s@tcp(localhost:%s)/mindsdb?timeout=2s&readTimeout=2s&writeTimeout=2s&parseTime=true", user, pass, MySQLPort)
+		providedDSN = fmt.Sprintf("%s:%s@tcp(localhost:%s)/mindsdb?timeout=10s&readTimeout=10s&writeTimeout=10s&parseTime=true", user, pass, MySQLPort)
 	}
 
-	maxAttempts := 30
+	// Extend timeout for cloud/EC2 environments where startup can be slower
+	maxAttempts := 60 // Doubled from 30 to 60 for EC2
+	var lastErr error
+
+	// Wait longer initially for MindsDB to start up on EC2
+	fmt.Println("\n💡 EC2 tip: MindsDB startup can take 2-3 minutes on cloud instances")
+	time.Sleep(10 * time.Second) // Increased from 5 to 10 seconds
+
 	for i := 1; i <= maxAttempts; i++ {
 		// Attempt with default credentials first
 		if db, err := sql.Open("mysql", defaultDSN); err == nil {
@@ -215,6 +281,8 @@ func (c *MindsDBClient) waitForMindsDB(user, pass string) error {
 				fmt.Println(" ✅")
 				fmt.Printf("🎉 MindsDB is ready! Web UI: http://localhost:%s\n", MindsDBPort)
 				return nil
+			} else {
+				lastErr = err
 			}
 			db.Close()
 		}
@@ -227,17 +295,35 @@ func (c *MindsDBClient) waitForMindsDB(user, pass string) error {
 					fmt.Println(" ✅")
 					fmt.Printf("🎉 MindsDB is ready! Web UI: http://localhost:%s\n", MindsDBPort)
 					return nil
+				} else {
+					lastErr = err
 				}
 				db.Close()
 			}
 		}
 
+		// Use progressive backoff - wait longer between attempts as time goes on
+		// More patient for EC2/cloud environments
+		waitTime := 4 * time.Second
+		if i > 15 {
+			waitTime = 6 * time.Second
+		}
+		if i > 30 {
+			waitTime = 8 * time.Second
+		}
+		if i > 45 {
+			waitTime = 10 * time.Second
+		}
+
 		fmt.Print(".")
-		time.Sleep(2 * time.Second)
+		time.Sleep(waitTime)
 	}
 
 	fmt.Println(" ❌")
-	return fmt.Errorf("MindsDB did not become ready after %d seconds", maxAttempts*2)
+	if lastErr != nil {
+		return fmt.Errorf("MindsDB did not become ready after %d attempts (up to 10 minutes). Last error: %v", maxAttempts, lastErr)
+	}
+	return fmt.Errorf("MindsDB did not become ready after %d attempts (up to 10 minutes)", maxAttempts)
 }
 
 // StopEmbeddedMindsDB stops the MindsDB container
